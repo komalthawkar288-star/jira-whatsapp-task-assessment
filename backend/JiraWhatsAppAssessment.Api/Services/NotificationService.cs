@@ -6,24 +6,27 @@ public class NotificationService
 {
     private readonly ILogger<NotificationService> _logger;
 
-    public NotificationService(ILogger<NotificationService> logger) => _logger = logger;
+    public NotificationService(ILogger<NotificationService> logger)
+    {
+        _logger = logger;
+    }
 
     public Task SendToRahulAsync(TicketAssessment ticket)
     {
-        var message = $"""
-        JIRA TASK UPDATE
-        Ticket: {ticket.TicketKey}
-        Assignee: {ticket.Assignee}
-        Status: {ticket.Status}
-        Due Date: {ticket.DueDate:yyyy-MM-dd}
-        Latest Update: {ticket.LatestUpdate}
-        Assessment: {ticket.Assessment}
-        Reason: {ticket.Reason}
-        """;
+        var dueDate = ticket.DueDate?.ToString("yyyy-MM-dd") ?? "Not specified";
+
+        var message =
+            "JIRA TASK UPDATE\n" +
+            $"Ticket: {ticket.TicketKey}\n" +
+            $"Assignee: {ticket.Assignee}\n" +
+            $"Status: {ticket.Status}\n" +
+            $"Due Date: {dueDate}\n" +
+            $"Latest Update: {ticket.LatestUpdate}\n" +
+            $"Assessment: {ticket.Assessment}\n" +
+            $"Reason: {ticket.Reason}";
 
         // POC mock boundary. Replace this method with the approved WhatsApp provider integration.
-        _logger.LogInformation("Mock WhatsApp notification to Rahul:
-{Message}", message);
+        _logger.LogInformation("Mock WhatsApp notification to Rahul:\n{Message}", message);
         return Task.CompletedTask;
     }
 }
