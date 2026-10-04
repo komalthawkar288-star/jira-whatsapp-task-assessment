@@ -1,0 +1,15 @@
+{
+  "webhookEvent": "jira:issue_updated",
+  "issue": {
+    "key": "JIRA-101",
+    "fields": {
+      "summary": "Complete order API enhancement",
+      "assignee": { "displayName": "Komal" },
+      "status": { "name": "In Progress" },
+      "duedate": "2026-10-06"
+    }
+  },
+  "comment": {
+    "body": "Development completed. Testing is in progress."
+  }
+}
