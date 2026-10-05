@@ -1,13 +1,15 @@
+using System.Net.Http.Headers;
+using System.Text;
 using JiraWhatsAppAssessment.Api.Models;
-using Twilio;
-using Twilio.Exceptions;
-using Twilio.Rest.Api.V2010.Account;
-using Twilio.Types;
 
 namespace JiraWhatsAppAssessment.Api.Services;
 
+// Calls the Twilio REST API directly (Body/From/To only), bypassing the Twilio SDK.
+// Error 21654 means the request carried ContentVariables without ContentSid;
+// a plain form post cannot include them.
 public class NotificationService
 {
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
     private readonly ILogger<NotificationService> _logger;
 
     public NotificationService(ILogger<NotificationService> logger)
@@ -29,46 +31,44 @@ public class NotificationService
             $"Assessment: {ticket.Assessment}\n" +
             $"Reason: {ticket.Reason}";
 
-        // WhatsApp body limit is 1600 characters
         if (message.Length > 1500)
             message = message[..1500] + "...";
 
-        var accountSid = Environment.GetEnvironmentVariable("TWILIO_ACCOUNT_SID")?.Trim();
-        var authToken = Environment.GetEnvironmentVariable("TWILIO_AUTH_TOKEN")?.Trim();
+        var sid = Environment.GetEnvironmentVariable("TWILIO_ACCOUNT_SID")?.Trim();
+        var token = Environment.GetEnvironmentVariable("TWILIO_AUTH_TOKEN")?.Trim();
         var from = Environment.GetEnvironmentVariable("TWILIO_WHATSAPP_FROM")?.Trim();
         var to = Environment.GetEnvironmentVariable("TWILIO_WHATSAPP_TO")?.Trim();
 
-        if (string.IsNullOrWhiteSpace(accountSid) ||
-            string.IsNullOrWhiteSpace(authToken) ||
-            string.IsNullOrWhiteSpace(from) ||
-            string.IsNullOrWhiteSpace(to))
+        if (string.IsNullOrWhiteSpace(sid) || string.IsNullOrWhiteSpace(token) ||
+            string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
         {
             _logger.LogError("Twilio environment variables are not configured.");
             return;
         }
 
-        from = WithPrefix(from);
-        to = WithPrefix(to);
-
         try
         {
-            TwilioClient.Init(accountSid, authToken);
+            var url = $"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json";
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["From"] = WithPrefix(from),
+                    ["To"] = WithPrefix(to),
+                    ["Body"] = message
+                })
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue(
+                "Basic", Convert.ToBase64String(Encoding.ASCII.GetBytes($"{sid}:{token}")));
 
-            var result = await MessageResource.CreateAsync(
-                body: message,
-                from: new PhoneNumber(from),
-                to: new PhoneNumber(to));
+            using var response = await Http.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
 
-            _logger.LogInformation(
-                "WhatsApp notification sent. SID: {MessageSid}, Status: {Status}",
-                result.Sid, result.Status);
-        }
-        catch (ApiException ex)
-        {
-            // Do not rethrow: avoids a 500 to Jira, which would trigger repeated retries.
-            _logger.LogError(
-                "Twilio rejected the message. Code: {Code}, Message: {Message}, Info: {Info}",
-                ex.Code, ex.Message, ex.MoreInfo);
+            if (response.IsSuccessStatusCode)
+                _logger.LogInformation("WhatsApp notification sent. Response: {Body}", body);
+            else
+                _logger.LogError("Twilio rejected the message. HTTP {Status}: {Body}",
+                    (int)response.StatusCode, body);
         }
         catch (Exception ex)
         {
